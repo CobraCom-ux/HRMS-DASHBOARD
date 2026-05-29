@@ -1,0 +1,1100 @@
+<script>
+/* ═══════════════════════════════════════════════
+   HRMS PORTAL — scripts.html  (Client-Side JS)
+═══════════════════════════════════════════════ */
+
+// ── State ─────────────────────────────────────
+const State = {
+  token    : null,
+  user     : null,
+  page     : 'dashboard',
+  employees: [],
+  leaveTab : 'my'          // 'my' | 'all'
+};
+
+// ── Init ──────────────────────────────────────
+window.addEventListener('load', () => {
+  const saved = sessionStorage.getItem('hrms_session');
+  if (saved) {
+    try {
+      const s = JSON.parse(saved);
+      State.token = s.token;
+      State.user  = s.user;
+      bootApp();
+    } catch { showLogin(); }
+  } else {
+    showLogin();
+  }
+  startClock();
+});
+
+// ── Clock ─────────────────────────────────────
+function startClock() {
+  const tick = () => {
+    const now = new Date();
+    const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const date = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+    document.getElementById('topbarTime').textContent = time;
+    document.getElementById('topbarDate').textContent = date;
+    const cw = document.getElementById('liveClock');
+    const cd = document.getElementById('liveDate');
+    if (cw) cw.textContent = time;
+    if (cd) cd.textContent = date;
+  };
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ── Login ─────────────────────────────────────
+let loginRole = 'employee';
+
+function switchLoginTab(role, el) {
+  loginRole = role;
+
+  document.querySelectorAll('.tab-btn')
+    .forEach(b => b.classList.remove('active'));
+
+  el.classList.add('active');
+
+  const hint = document.getElementById('loginHint');
+
+  hint.textContent =
+    role === 'admin'
+      ? 'Demo: admin@hrms.com / admin123'
+      : 'Demo: jane@hrms.com / employee123';
+}
+
+function togglePw() {
+  const inp  = document.getElementById('loginPassword');
+  const icon = document.getElementById('pwIcon');
+  if (inp.type === 'password') { inp.type = 'text';     icon.className = 'fa-solid fa-eye-slash'; }
+  else                          { inp.type = 'password'; icon.className = 'fa-solid fa-eye'; }
+}
+
+function handleLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pw    = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  const btn   = document.getElementById('loginBtn');
+
+  errEl.classList.add('hidden');
+  if (!email || !pw) { showErr(errEl, 'Please enter email and password.'); return; }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner" style="width:18px;height:18px;border-width:2px"></span>';
+
+  google.script.run
+    .withSuccessHandler(res => {
+      btn.disabled = false;
+      btn.innerHTML = '<span>Sign In</span> <i class="fa-solid fa-arrow-right"></i>';
+      if (!res.success) { showErr(errEl, res.message); return; }
+      State.token = res.token;
+      State.user  = { name: res.name, role: res.role, id: res.id, dept: res.dept, pos: res.pos };
+      sessionStorage.setItem('hrms_session', JSON.stringify({ token: State.token, user: State.user }));
+      bootApp();
+    })
+    .withFailureHandler(err => {
+      btn.disabled = false;
+      btn.innerHTML = '<span>Sign In</span> <i class="fa-solid fa-arrow-right"></i>';
+      showErr(errEl, err.message || 'Server error. Please try again.');
+    })
+    .login(email, pw);
+}
+
+function showErr(el, msg) { el.textContent = msg; el.classList.remove('hidden'); }
+
+// ── Boot App ──────────────────────────────────
+function bootApp() {
+  document.getElementById('loginScreen').classList.add('hidden');
+  document.getElementById('appShell').classList.remove('hidden');
+
+  const initials = State.user.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0,2);
+  document.getElementById('sidebarAvatar').textContent = initials;
+  document.getElementById('topbarAvatar').textContent  = initials;
+  document.getElementById('sidebarName').textContent   = State.user.name;
+  document.getElementById('sidebarRole').textContent   = State.user.role === 'admin' ? 'Administrator' : 'Employee';
+
+  if (State.user.role === 'admin') {
+  document.querySelectorAll('.admin-only')
+    .forEach(el => el.classList.remove('hidden'));
+}
+
+if (State.user.role === 'hr') {
+  document.querySelectorAll('.hr-only')
+    .forEach(el => el.classList.remove('hidden'));
+}
+
+  navigate('dashboard');
+}
+
+function showLogin() {
+  document.getElementById('loginScreen').classList.remove('hidden');
+  document.getElementById('appShell').classList.add('hidden');
+}
+
+// ── Logout ────────────────────────────────────
+function handleLogout() {
+  if (State.token) {
+    google.script.run.logout(State.token);
+  }
+  sessionStorage.removeItem('hrms_session');
+  State.token = null;
+  State.user  = null;
+  showLogin();
+}
+
+// ── Sidebar ───────────────────────────────────
+function toggleSidebar() {
+  const sb  = document.getElementById('sidebar');
+  const ov  = document.getElementById('sidebarOverlay');
+  const open = sb.classList.contains('open');
+  sb.classList.toggle('open', !open);
+  ov.classList.toggle('active', !open);
+}
+
+// ── Navigation ────────────────────────────────
+const PAGE_TITLES = {
+  dashboard : 'Dashboard',
+  attendance: 'Attendance',
+  leaves    : 'Leave Requests',
+  employees : 'Employee Management',
+  reports   : 'Reports',
+  profile   : 'My Profile'
+};
+
+function navigate(page) {
+  const role = State.user.role;
+
+if (role === 'employee') {
+
+  const blocked = ['employees', 'reports'];
+
+  if (blocked.includes(page)) {
+    showToast('error', 'Access denied');
+    return;
+  }
+}
+
+if (role === 'hr') {
+
+  const blocked = ['reports'];
+
+  if (blocked.includes(page)) {
+    showToast('error', 'Access denied');
+    return;
+  }
+}
+  State.page = page;
+  document.getElementById('pageTitle').textContent = PAGE_TITLES[page] || page;
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.page === page);
+  });
+
+  // Close mobile sidebar
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebarOverlay').classList.remove('active');
+
+  const area = document.getElementById('contentArea');
+  area.innerHTML = '<div class="loader"><div class="spinner"></div><span>Loading…</span></div>';
+
+  switch(page) {
+    case 'dashboard' : renderDashboard(); break;
+    case 'attendance': renderAttendance(); break;
+    case 'leaves'    : renderLeaves(); break;
+    case 'employees' : renderEmployees(); break;
+    case 'reports'   : renderReports(); break;
+    case 'profile'   : renderProfile(); break;
+  }
+}
+
+// ═══════════════════════════
+// DASHBOARD
+// ═══════════════════════════
+function renderDashboard() {
+  google.script.run
+    .withSuccessHandler(d => {
+      if (d.error) { showLogin(); return; }
+      const area = document.getElementById('contentArea');
+
+      const deptBars = Object.entries(d.depts || {}).map(([name, count]) => {
+        const max   = Math.max(...Object.values(d.depts));
+        const pct   = Math.round((count / max) * 100);
+        return `<div class="dept-bar">
+          <span class="dept-label">${name}</span>
+          <div class="dept-track"><div class="dept-fill" style="width:${pct}%"></div></div>
+          <span class="dept-count">${count}</span>
+        </div>`;
+      }).join('');
+
+      const clockSection = d.role === 'employee' ? `
+        <div class="clock-widget">
+          <div class="clock-time" id="liveClock">--:--:--</div>
+          <div class="clock-date" id="liveDate">Loading…</div>
+          <div class="clock-status" id="clockStatus">
+            <div class="status-dot ${d.myAtt ? (d.myAtt.clockOut ? 'out' : 'in') : ''}" id="statusDot"></div>
+            <span id="statusText">${d.myAtt
+              ? (d.myAtt.clockOut ? `Clocked out at ${d.myAtt.clockOut}` : `Clocked in at ${d.myAtt.clockIn}`)
+              : 'Not clocked in'
+            }</span>
+          </div>
+          <div class="clock-buttons">
+            <button class="btn-success" onclick="doClock('in')" id="btnClockIn" ${d.myAtt ? 'disabled' : ''}>
+              <i class="fa-solid fa-play"></i> Clock In
+            </button>
+            <button class="btn-danger" onclick="doClock('out')" id="btnClockOut" ${!d.myAtt || d.myAtt.clockOut ? 'disabled' : ''}>
+              <i class="fa-solid fa-stop"></i> Clock Out
+            </button>
+          </div>
+          ${d.myAtt && d.myAtt.hours ? `<p style="color:var(--text3);font-size:.8rem;margin-top:.75rem">Today: <strong style="color:var(--text1)">${d.myAtt.hours} hrs</strong></p>` : ''}
+        </div>
+      ` : '';
+
+      const recentRows = (d.recentAtt || []).slice(0,8).map(r => `
+        <tr>
+          <td><code style="font-size:.78rem;color:var(--accent)">${r.empId}</code></td>
+          <td>${r.date}</td>
+          <td>${r.clockIn || '—'}</td>
+          <td>${r.clockOut || '—'}</td>
+          <td>${r.hours ? r.hours + ' h' : '—'}</td>
+          <td>${pill(r.status)}</td>
+        </tr>
+      `).join('');
+
+      area.innerHTML = `
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2>Welcome back, ${State.user.name.split(' ')[0]} 👋</h2>
+            <p>${new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})}</p>
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon amber"><i class="fa-solid fa-users"></i></div>
+            <div><div class="stat-val">${d.totalEmployees}</div><div class="stat-label">Total Employees</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon green"><i class="fa-solid fa-user-check"></i></div>
+            <div><div class="stat-val">${d.presentToday}</div><div class="stat-label">Present Today</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon blue"><i class="fa-solid fa-calendar-xmark"></i></div>
+            <div><div class="stat-val">${d.pendingLeaves}</div><div class="stat-label">Pending Leaves</div></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon red"><i class="fa-solid fa-user-minus"></i></div>
+            <div><div class="stat-val">${d.onLeaveToday}</div><div class="stat-label">On Leave Today</div></div>
+          </div>
+        </div>
+
+        <div class="two-col">
+          ${clockSection ? clockSection : ''}
+          <div class="card" style="${d.role !== 'employee' ? 'grid-column:1/3' : ''}">
+            <div class="card-header"><h3><i class="fa-solid fa-chart-pie" style="color:var(--accent);margin-right:.4rem"></i>Departments</h3></div>
+            <div class="dept-bars">${deptBars || '<p style="color:var(--text3);font-size:.85rem">No data</p>'}</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3><i class="fa-solid fa-clock-rotate-left" style="color:var(--primary);margin-right:.4rem"></i>Recent Attendance</h3>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Employee</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Status</th></tr></thead>
+              <tbody>${recentRows || '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:2rem">No records</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    })
+    .withFailureHandler(err => showToast('error', err.message))
+    .getDashboardData(State.token);
+}
+
+// ═══════════════════════════
+// ATTENDANCE
+// ═══════════════════════════
+function renderAttendance() {
+  const area = document.getElementById('contentArea');
+  const isAdmin =
+  State.user.role === 'admin' ||
+  State.user.role === 'hr';
+
+  if (isAdmin) {
+    renderAdminAttendance(area);
+  } else {
+    renderEmployeeAttendance(area);
+  }
+}
+
+function renderEmployeeAttendance(area) {
+  google.script.run
+    .withSuccessHandler(res => {
+      const today = new Date().toISOString().split('T')[0];
+      const todayRec = (res.records || []).find(r => r.date === today);
+      const clocked = todayRec && !todayRec.clockOut;
+      const done    = todayRec && todayRec.clockOut;
+
+      const rows = (res.records || []).map(r => `
+        <tr>
+          <td>${r.date}</td>
+          <td>${r.clockIn || '—'}</td>
+          <td>${r.clockOut || '—'}</td>
+          <td>${r.hours ? r.hours + ' h' : '—'}</td>
+          <td>${pill(r.status)}</td>
+        </tr>
+      `).join('');
+
+      area.innerHTML = `
+        <div class="page-header">
+          <div class="page-header-left"><h2>Attendance</h2><p>Track your working hours</p></div>
+        </div>
+
+        <div class="clock-widget" style="margin-bottom:1.25rem">
+          <div class="clock-time" id="liveClock">--:--:--</div>
+          <div class="clock-date" id="liveDate">Loading…</div>
+          <div class="clock-status">
+            <div class="status-dot ${clocked ? 'in' : done ? 'out' : ''}"></div>
+            <span>${todayRec
+              ? (done ? `Completed — ${todayRec.hours} hrs` : `Clocked in at ${todayRec.clockIn}`)
+              : 'Not clocked in yet'
+            }</span>
+          </div>
+          <div class="clock-buttons">
+            <button class="btn-success" onclick="doClock('in')" ${todayRec ? 'disabled' : ''}>
+              <i class="fa-solid fa-play"></i> Clock In
+            </button>
+            <button class="btn-danger" onclick="doClock('out')" ${!clocked ? 'disabled' : ''}>
+              <i class="fa-solid fa-stop"></i> Clock Out
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Attendance History</h3><span>Last 30 records</span></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Status</th></tr></thead>
+              <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:var(--text3);padding:2rem">No records</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    })
+    .withFailureHandler(err => showToast('error', err.message))
+    .getAttendanceHistory(State.token, null);
+}
+
+function renderAdminAttendance(area) {
+  const today = new Date().toISOString().split('T')[0];
+  area.innerHTML = `
+    <div class="page-header">
+      <div class="page-header-left"><h2>Attendance Management</h2><p>View all employee attendance records</p></div>
+    </div>
+    <div class="filter-bar">
+      <div class="search-box"><i class="fa-solid fa-search"></i><input type="text" id="attSearch" placeholder="Filter by Employee ID…" oninput="filterAttTable()" /></div>
+      <input type="date" class="filter-select" id="attDate" value="${today}" onchange="loadAdminAtt()" />
+      <button class="btn-secondary" onclick="document.getElementById('attDate').value=''; loadAdminAtt()"><i class="fa-solid fa-rotate-left"></i> All</button>
+    </div>
+    <div class="card" id="attTableWrap">
+      <div class="loader"><div class="spinner"></div></div>
+    </div>
+  `;
+  loadAdminAtt();
+}
+
+function loadAdminAtt() {
+  const date = document.getElementById('attDate')?.value || '';
+  google.script.run
+    .withSuccessHandler(res => {
+      const wrap = document.getElementById('attTableWrap');
+      if (!wrap) return;
+      const rows = (res.records || []).map(r => `
+        <tr data-emp="${r.empId}">
+          <td><code style="font-size:.78rem;color:var(--accent)">${r.empId}</code></td>
+          <td>${r.date}</td>
+          <td>${r.clockIn || '—'}</td>
+          <td>${r.clockOut || '—'}</td>
+          <td>${r.hours ? r.hours + ' h' : '—'}</td>
+          <td>${pill(r.status)}</td>
+        </tr>
+      `).join('');
+      wrap.innerHTML = `
+        <div class="card-header"><h3>Records</h3><span>${(res.records || []).length} found</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Employee ID</th><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Status</th></tr></thead>
+            <tbody id="attTbody">${rows || '<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:2rem">No records</td></tr>'}</tbody>
+          </table>
+        </div>
+      `;
+    })
+    .withFailureHandler(err => showToast('error', err.message))
+    .getAllAttendance(State.token, date);
+}
+
+function filterAttTable() {
+  const q = document.getElementById('attSearch')?.value.toLowerCase() || '';
+  document.querySelectorAll('#attTbody tr').forEach(tr => {
+    tr.style.display = tr.dataset.emp?.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function doClock(type) {
+  const fn = type === 'in' ? 'clockIn' : 'clockOut';
+  const btnIn  = document.getElementById('btnClockIn');
+  const btnOut = document.getElementById('btnClockOut');
+  if (btnIn)  btnIn.disabled  = true;
+  if (btnOut) btnOut.disabled = true;
+
+  google.script.run
+    .withSuccessHandler(res => {
+      if (!res.success) {
+        showToast('error', res.message);
+        if (btnIn)  btnIn.disabled  = false;
+        if (btnOut) btnOut.disabled = false;
+        return;
+      }
+      showToast('success', type === 'in'
+        ? `Clocked in at ${res.time}`
+        : `Clocked out at ${res.time} — ${res.hours || 0} hrs`
+      );
+      const dot  = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+      if (dot)  dot.className    = `status-dot ${type === 'in' ? 'in' : 'out'}`;
+      if (text) text.textContent = type === 'in'
+        ? `Clocked in at ${res.time}`
+        : `Clocked out at ${res.time}`;
+      if (btnIn)  btnIn.disabled  = true;
+      if (btnOut) btnOut.disabled = type === 'out';
+    })
+    .withFailureHandler(err => {
+      showToast('error', err.message || 'Clock error');
+      if (btnIn)  btnIn.disabled  = false;
+      if (btnOut) btnOut.disabled = false;
+    })
+    [fn](State.token);
+}
+
+// ═══════════════════════════
+// LEAVES
+// ═══════════════════════════
+function renderLeaves() {
+  const area = document.getElementById('contentArea');
+  const isAdmin =
+  State.user.role === 'admin' ||
+  State.user.role === 'hr';
+
+  google.script.run
+    .withSuccessHandler(res => {
+      const all     = res.records || [];
+      const pending = all.filter(r => r.status === 'Pending');
+
+      const badge = document.getElementById('leavesBadge');
+      if (isAdmin && pending.length) { badge.textContent = pending.length; badge.style.display = ''; }
+      else badge.style.display = 'none';
+
+      const tabs = isAdmin ? `
+        <div class="tab-switcher" style="width:auto;max-width:300px;margin-bottom:1.25rem">
+          <button class="tab-btn ${State.leaveTab==='my'?'active':''}" onclick="setLeaveTab('my')">My Requests</button>
+          <button class="tab-btn ${State.leaveTab==='all'?'active':''}" onclick="setLeaveTab('all')">All Requests</button>
+        </div>
+      ` : '';
+
+      const showRecords = State.leaveTab === 'all' ? all : all.filter(r => r.empId === State.user.id);
+
+      area.innerHTML = `
+        <div class="page-header">
+          <div class="page-header-left"><h2>Leave Requests</h2><p>Manage time-off requests</p></div>
+          <button class="btn-primary" onclick="openLeaveModal()"><i class="fa-solid fa-plus"></i> Apply Leave</button>
+        </div>
+        ${tabs}
+        <div class="filter-bar">
+          <div class="search-box"><i class="fa-solid fa-search"></i><input type="text" id="leaveSearch" placeholder="Search name or type…" oninput="filterLeaves()" /></div>
+          <select class="filter-select" id="leaveStatusFilter" onchange="filterLeaves()">
+            <option value="">All Status</option>
+            <option value="Pending">Pending</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+          </select>
+        </div>
+        <div class="leave-cards" id="leaveCards">
+          ${buildLeaveCards(showRecords, isAdmin)}
+        </div>
+      `;
+
+      // Store for filter
+      window._allLeaveRecords = showRecords;
+    })
+    .withFailureHandler(err => showToast('error', err.message))
+    .getLeaves(State.token, null);
+}
+
+function buildLeaveCards(records, isAdmin) {
+  if (!records.length) return `<div class="empty-state"><i class="fa-solid fa-calendar-xmark"></i><p>No leave requests found</p></div>`;
+  return records.map(r => `
+    <div class="leave-card" data-name="${r.empName}" data-type="${r.type}" data-status="${r.status}">
+      <div class="leave-card-top">
+        <div>
+          <div class="leave-card-name">${r.empName}</div>
+          <div class="leave-card-type">${r.type} · ${r.days} day${r.days>1?'s':''}</div>
+        </div>
+        ${pill(r.status)}
+      </div>
+      <div class="leave-card-dates"><i class="fa-solid fa-calendar" style="color:var(--primary);margin-right:.35rem"></i>${r.startDate} → ${r.endDate}</div>
+      <div class="leave-card-reason">"${r.reason}"</div>
+      ${isAdmin && r.status === 'Pending' ? `
+      <div class="leave-card-actions">
+        <button class="btn-success" onclick="reviewLeave('${r.id}','approve')"><i class="fa-solid fa-check"></i> Approve</button>
+        <button class="btn-danger"  onclick="reviewLeave('${r.id}','reject')"><i class="fa-solid fa-xmark"></i> Reject</button>
+      </div>` : ''}
+      ${r.reviewedBy ? `<div style="font-size:.75rem;color:var(--text3);margin-top:.5rem">Reviewed by ${r.reviewedBy} on ${r.reviewedOn}</div>` : ''}
+    </div>
+  `).join('');
+}
+
+function setLeaveTab(tab) {
+  State.leaveTab = tab;
+  renderLeaves();
+}
+
+function filterLeaves() {
+  const q      = (document.getElementById('leaveSearch')?.value || '').toLowerCase();
+  const status = document.getElementById('leaveStatusFilter')?.value || '';
+  const all    = window._allLeaveRecords || [];
+  const filtered = all.filter(r =>
+    (!q || r.empName.toLowerCase().includes(q) || r.type.toLowerCase().includes(q)) &&
+    (!status || r.status === status)
+  );
+  document.getElementById('leaveCards').innerHTML = buildLeaveCards(filtered, State.user.role === 'admin');
+}
+
+function openLeaveModal() {
+  const today = new Date().toISOString().split('T')[0];
+  showModal('Apply for Leave',`
+    <div class="form-group">
+      <label><i class="fa-solid fa-tag"></i> Leave Type</label>
+      <select id="lvType">
+        <option>Annual Leave</option>
+        <option>Sick Leave</option>
+        <option>Emergency Leave</option>
+        <option>Maternity/Paternity</option>
+        <option>Unpaid Leave</option>
+      </select>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label><i class="fa-solid fa-calendar-day"></i> Start Date</label><input type="date" id="lvStart" value="${today}" min="${today}" /></div>
+      <div class="form-group"><label><i class="fa-solid fa-calendar-day"></i> End Date</label><input type="date" id="lvEnd" value="${today}" min="${today}" /></div>
+    </div>
+    <div class="form-group">
+      <label><i class="fa-solid fa-comment"></i> Reason</label>
+      <textarea id="lvReason" placeholder="Briefly describe your reason…"></textarea>
+    </div>
+  `, () => submitLeave());
+}
+
+function submitLeave() {
+  const data = {
+    type     : document.getElementById('lvType').value,
+    startDate: document.getElementById('lvStart').value,
+    endDate  : document.getElementById('lvEnd').value,
+    reason   : document.getElementById('lvReason').value.trim()
+  };
+  if (!data.reason) { showToast('error', 'Please enter a reason.'); return; }
+  if (data.endDate < data.startDate) { showToast('error', 'End date must be after start date.'); return; }
+
+  google.script.run
+    .withSuccessHandler(res => {
+      closeModal();
+      if (res.success) { showToast('success', res.message); renderLeaves(); }
+      else showToast('error', res.message);
+    })
+    .withFailureHandler(err => showToast('error', err.message))
+    .applyLeave(State.token, data);
+}
+
+function reviewLeave(id, action) {
+  google.script.run
+    .withSuccessHandler(res => {
+      if (res.success) { showToast('success', `Leave ${action}d.`); renderLeaves(); }
+      else showToast('error', res.message);
+    })
+    .withFailureHandler(err => showToast('error', err.message))
+    .reviewLeave(State.token, id, action, '');
+}
+
+// ═══════════════════════════
+// EMPLOYEES
+// ═══════════════════════════
+function renderEmployees() {
+
+  const area = document.getElementById('contentArea');
+
+  area.innerHTML = `
+    <div class="loader">
+      <div class="spinner"></div>
+      <span>Loading Employees...</span>
+    </div>
+  `;
+
+  google.script.run
+    .withSuccessHandler(function(res) {
+
+      console.log(res);
+
+      if (!res || !res.success) {
+
+        area.innerHTML = `
+          <div class="empty-state">
+            <i class="fa-solid fa-circle-xmark"></i>
+            <p>Failed to load employees</p>
+          </div>
+        `;
+
+        return;
+      }
+
+      State.employees = res.employees || [];
+
+      area.innerHTML = `
+        <div class="page-header">
+          <div class="page-header-left">
+            <h2>Employee Management</h2>
+            <p>${State.employees.length} employees total</p>
+          </div>
+
+          <button class="btn-primary" onclick="openAddEmpModal()">
+            <i class="fa-solid fa-user-plus"></i>
+            Add Employee
+          </button>
+        </div>
+
+        <div class="filter-bar">
+
+          <div class="search-box">
+            <i class="fa-solid fa-search"></i>
+
+            <input
+              type="text"
+              id="empSearch"
+              placeholder="Search employee..."
+              oninput="filterEmployees()"
+            />
+          </div>
+
+        </div>
+
+        <div class="emp-grid" id="empGrid">
+          ${buildEmpCards(State.employees)}
+        </div>
+      `;
+    })
+
+    .withFailureHandler(function(err) {
+
+      console.error(err);
+
+      area.innerHTML = `
+        <div class="empty-state">
+          <i class="fa-solid fa-circle-xmark"></i>
+          <p>${err.message}</p>
+        </div>
+      `;
+    })
+
+    .getEmployees(State.token);
+}
+
+function buildEmpCards(emps) {
+  if (!emps.length) return `<div class="empty-state" style="grid-column:1/-1"><i class="fa-solid fa-users"></i><p>No employees found</p></div>`;
+  return emps.map(e => {
+    const initials = e.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+    return `
+      <div class="emp-card">
+        <div class="emp-card-top">
+          <div class="emp-card-avatar">${initials}</div>
+          <div>
+            <div class="emp-card-name">${e.name}</div>
+            <div class="emp-card-pos">${e.position}</div>
+            <div class="emp-card-dept">${e.dept}</div>
+          </div>
+        </div>
+        <div class="emp-card-info">
+          <span><i class="fa-solid fa-envelope"></i> ${e.email}</span>
+          <span><i class="fa-solid fa-phone"></i> ${e.phone || '—'}</span>
+          <span><i class="fa-solid fa-calendar-plus"></i> Joined ${e.joinDate}</span>
+          <span><i class="fa-solid fa-id-badge"></i> ${e.id}</span>
+        </div>
+        <div class="emp-card-footer">
+          ${pill(e.status)}
+          <div style="display:flex;gap:.4rem">
+            <button class="btn-secondary" onclick="openEditEmpModal('${e.id}')" style="padding:.4rem .7rem;font-size:.8rem"><i class="fa-solid fa-pen"></i></button>
+            <button class="btn-danger"    onclick="confirmDeleteEmp('${e.id}','${e.name}')" style="padding:.4rem .7rem;font-size:.8rem"><i class="fa-solid fa-trash"></i></button>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function filterEmployees() {
+  const q      = (document.getElementById('empSearch')?.value || '').toLowerCase();
+  const dept   = document.getElementById('empDeptFilter')?.value || '';
+  const status = document.getElementById('empStatusFilter')?.value || '';
+  const filtered = State.employees.filter(e =>
+    (!q || e.name.toLowerCase().includes(q) || e.dept.toLowerCase().includes(q) || e.email.toLowerCase().includes(q)) &&
+    (!dept || e.dept === dept) &&
+    (!status || e.status === status)
+  );
+  document.getElementById('empGrid').innerHTML = buildEmpCards(filtered);
+}
+
+function openAddEmpModal() {
+  const today = new Date().toISOString().split('T')[0];
+  showModal('Add New Employee', `
+    <div class="form-row">
+      <div class="form-group"><label><i class="fa-solid fa-user"></i> Full Name</label><input type="text" id="empName" placeholder="Jane Smith" /></div>
+      <div class="form-group"><label><i class="fa-solid fa-envelope"></i> Email</label><input type="email" id="empEmail" placeholder="jane@company.com" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label><i class="fa-solid fa-building"></i> Department</label><input type="text" id="empDept" placeholder="Engineering" /></div>
+      <div class="form-group"><label><i class="fa-solid fa-briefcase"></i> Position</label><input type="text" id="empPos" placeholder="Software Engineer" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label><i class="fa-solid fa-phone"></i> Phone</label><input type="text" id="empPhone" placeholder="+1-555-0000" /></div>
+      <div class="form-group"><label><i class="fa-solid fa-calendar"></i> Join Date</label><input type="date" id="empJoin" value="${today}" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label><i class="fa-solid fa-lock"></i> Password</label><input type="password" id="empPw" placeholder="Welcome@123" /></div>
+      <div class="form-group"><label><i class="fa-solid fa-shield-halved"></i> Role</label>
+        <select id="empRole">
+  <option value="employee">Employee</option>
+  <option value="hr">HR</option>
+  <option value="hr" ${e.role==='hr'?'selected':''}>HR</option>
+  <option value="admin">Admin</option>
+</select>
+      </div>
+    </div>
+  `, () => submitAddEmp());
+}
+
+function submitAddEmp() {
+
+  const emp = {
+    name     : document.getElementById('empName').value.trim(),
+    email    : document.getElementById('empEmail').value.trim(),
+    dept     : document.getElementById('empDept').value.trim(),
+    position : document.getElementById('empPos').value.trim(),
+    phone    : document.getElementById('empPhone').value.trim(),
+    joinDate : document.getElementById('empJoin').value,
+    password : document.getElementById('empPw').value || 'Welcome@123',
+    role     : document.getElementById('empRole').value
+  };
+
+  if (!emp.name || !emp.email) {
+    showToast('error', 'Name and email are required.');
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(res => {
+
+      if (res.success) {
+
+        closeModal();
+
+        showModal(
+          'Employee Created Successfully',
+
+          `
+          <div style="padding:1rem">
+
+            <div class="card" style="margin-bottom:1rem">
+              <div class="meta-label">Employee Email</div>
+              <div class="meta-val">
+                <code>${emp.email}</code>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="meta-label">Temporary Password</div>
+              <div class="meta-val">
+                <code>${emp.password}</code>
+              </div>
+            </div>
+
+            <p style="margin-top:1rem;color:var(--text3);font-size:.8rem">
+              Share these credentials with the employee.
+            </p>
+
+          </div>
+          `,
+
+          () => {
+            closeModal();
+            renderEmployees();
+          },
+
+          'Done',
+          'btn-primary'
+        );
+
+      } else {
+        showToast('error', res.message);
+      }
+
+    })
+
+    .withFailureHandler(err => {
+      showToast('error', err.message);
+    })
+
+    .addEmployee(State.token, emp);
+}
+
+function openEditEmpModal(id) {
+  const e = State.employees.find(x => x.id === id);
+  if (!e) return;
+  showModal(`Edit — ${e.name}`, `
+    <div class="form-row">
+      <div class="form-group"><label>Full Name</label><input type="text" id="eeName" value="${e.name}" /></div>
+      <div class="form-group"><label>Email</label><input type="email" id="eeEmail" value="${e.email}" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Department</label><input type="text" id="eeDept" value="${e.dept}" /></div>
+      <div class="form-group"><label>Position</label><input type="text" id="eePos" value="${e.position}" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Phone</label><input type="text" id="eePhone" value="${e.phone}" /></div>
+      <div class="form-group"><label>Status</label>
+        <select id="eeStatus"><option ${e.status==='Active'?'selected':''}>Active</option><option ${e.status==='Inactive'?'selected':''}>Inactive</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>New Password (leave blank to keep)</label><input type="password" id="eePw" placeholder="••••••••" /></div>
+      <div class="form-group"><label>Role</label>
+        <select id="eeRole"><option value="employee" ${e.role==='employee'?'selected':''}>Employee</option><option value="admin" ${e.role==='admin'?'selected':''}>Admin</option></select>
+      </div>
+    </div>
+  `, () => submitEditEmp(id));
+}
+
+function submitEditEmp(id) {
+  const emp = {
+    id,
+    name    : document.getElementById('eeName').value.trim(),
+    email   : document.getElementById('eeEmail').value.trim(),
+    dept    : document.getElementById('eeDept').value.trim(),
+    position: document.getElementById('eePos').value.trim(),
+    phone   : document.getElementById('eePhone').value.trim(),
+    status  : document.getElementById('eeStatus').value,
+    role    : document.getElementById('eeRole').value,
+    password: document.getElementById('eePw').value
+  };
+  google.script.run
+    .withSuccessHandler(res => {
+      closeModal();
+      if (res.success) { showToast('success', res.message); renderEmployees(); }
+      else showToast('error', res.message);
+    })
+    .withFailureHandler(err => showToast('error', err.message))
+    .updateEmployee(State.token, emp);
+}
+
+function confirmDeleteEmp(id, name) {
+  showModal('Confirm Delete', `
+    <div style="text-align:center;padding:1rem">
+      <i class="fa-solid fa-triangle-exclamation" style="font-size:2rem;color:var(--danger);margin-bottom:.75rem;display:block"></i>
+      <p>Are you sure you want to delete <strong>${name}</strong>?</p>
+      <p style="font-size:.8rem;color:var(--text3);margin-top:.4rem">This action cannot be undone.</p>
+    </div>
+  `, () => deleteEmp(id), 'Delete', 'btn-danger');
+}
+
+function deleteEmp(id) {
+  google.script.run
+    .withSuccessHandler(res => {
+      closeModal();
+      if (res.success) { showToast('success', 'Employee deleted.'); renderEmployees(); }
+      else showToast('error', res.message);
+    })
+    .withFailureHandler(err => showToast('error', err.message))
+    .deleteEmployee(State.token, id);
+}
+
+// ═══════════════════════════
+// REPORTS
+// ═══════════════════════════
+function renderReports() {
+  const area = document.getElementById('contentArea');
+  area.innerHTML = `
+    <div class="page-header">
+      <div class="page-header-left"><h2>Reports</h2><p>Analytics & Insights</p></div>
+    </div>
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-header"><h3><i class="fa-solid fa-file-chart-column" style="color:var(--primary);margin-right:.4rem"></i>Quick Reports</h3></div>
+      <div style="display:flex;flex-wrap:wrap;gap:.75rem;padding:.5rem 0">
+        <button class="btn-secondary" onclick="navigate('attendance')"><i class="fa-solid fa-clock"></i> Attendance Log</button>
+        <button class="btn-secondary" onclick="navigate('leaves')"><i class="fa-solid fa-calendar-xmark"></i> Leave Summary</button>
+        <button class="btn-secondary" onclick="navigate('employees')"><i class="fa-solid fa-users"></i> Employee List</button>
+      </div>
+    </div>
+    <div class="stats-grid" id="reportStats">
+      <div class="loader"><div class="spinner"></div></div>
+    </div>
+  `;
+
+  google.script.run
+    .withSuccessHandler(d => {
+      document.getElementById('reportStats').innerHTML = `
+        <div class="stat-card"><div class="stat-icon amber"><i class="fa-solid fa-users"></i></div><div><div class="stat-val">${d.totalEmployees}</div><div class="stat-label">Total Employees</div></div></div>
+        <div class="stat-card"><div class="stat-icon green"><i class="fa-solid fa-user-check"></i></div><div><div class="stat-val">${d.presentToday}</div><div class="stat-label">Present Today</div></div></div>
+        <div class="stat-card"><div class="stat-icon blue"><i class="fa-solid fa-calendar-xmark"></i></div><div><div class="stat-val">${d.pendingLeaves}</div><div class="stat-label">Pending Leaves</div></div></div>
+        <div class="stat-card"><div class="stat-icon red"><i class="fa-solid fa-user-minus"></i></div><div><div class="stat-val">${d.onLeaveToday}</div><div class="stat-label">On Leave Today</div></div></div>
+      `;
+    })
+    .withFailureHandler(() => {})
+    .getDashboardData(State.token);
+}
+
+// ═══════════════════════════
+// PROFILE
+// ═══════════════════════════
+function renderProfile() {
+  google.script.run
+    .withSuccessHandler(res => {
+      if (!res.success) { showToast('error', 'Failed to load profile'); return; }
+      const p = res.profile;
+      const area = document.getElementById('contentArea');
+      const initials = p.name.split(' ').map(w=>w[0]).join('').slice(0,2).toUpperCase();
+
+      area.innerHTML = `
+        <div class="page-header">
+          <div class="page-header-left"><h2>My Profile</h2><p>View and manage your information</p></div>
+        </div>
+
+        <div class="profile-header">
+          <div class="profile-avatar">${initials}</div>
+          <div>
+            <div class="profile-name">${p.name}</div>
+            <div class="profile-pos">${p.position}</div>
+            <div class="profile-dept">${p.dept}</div>
+          </div>
+          <div style="margin-left:auto">${pill(p.status)}</div>
+        </div>
+
+        <div class="profile-meta">
+          <div class="meta-item"><div class="meta-label">Employee ID</div><div class="meta-val"><code>${p.id}</code></div></div>
+          <div class="meta-item"><div class="meta-label">Email</div><div class="meta-val">${p.email}</div></div>
+          <div class="meta-item"><div class="meta-label">Phone</div><div class="meta-val">${p.phone || '—'}</div></div>
+          <div class="meta-item"><div class="meta-label">Department</div><div class="meta-val">${p.dept}</div></div>
+          <div class="meta-item"><div class="meta-label">Position</div><div class="meta-val">${p.position}</div></div>
+          <div class="meta-item"><div class="meta-label">Join Date</div><div class="meta-val">${p.joinDate}</div></div>
+          <div class="meta-item"><div class="meta-label">Role</div><div class="meta-val" style="text-transform:capitalize">${p.role}</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Recent Leave Requests</h3></div>
+          <div id="profileLeaves"><div class="loader"><div class="spinner"></div></div></div>
+        </div>
+      `;
+
+      google.script.run
+        .withSuccessHandler(lres => {
+          const rows = (lres.records || []).slice(0,5).map(r => `
+            <tr>
+              <td>${r.type}</td>
+              <td>${r.startDate} → ${r.endDate}</td>
+              <td>${r.days} day${r.days>1?'s':''}</td>
+              <td>${pill(r.status)}</td>
+            </tr>
+          `).join('');
+          document.getElementById('profileLeaves').innerHTML = `
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Type</th><th>Dates</th><th>Days</th><th>Status</th></tr></thead>
+                <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:var(--text3);padding:1.5rem">No leave requests</td></tr>'}</tbody>
+              </table>
+            </div>
+          `;
+        })
+        .withFailureHandler(() => {})
+        .getLeaves(State.token, null);
+    })
+    .withFailureHandler(err => showToast('error', err.message))
+    .getMyProfile(State.token);
+}
+
+// ═══════════════════════════
+// MODAL SYSTEM
+// ═══════════════════════════
+function showModal(title, body, onConfirm, confirmLabel = 'Confirm', confirmClass = 'btn-primary') {
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.id = 'modalBackdrop';
+  backdrop.innerHTML = `
+    <div class="modal">
+      <div class="modal-header">
+        <h3>${title}</h3>
+        <button class="modal-close" onclick="closeModal()"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="modal-body">${body}</div>
+      <div class="modal-footer">
+        <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="${confirmClass}" id="modalConfirmBtn" onclick="handleModalConfirm()">${confirmLabel}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(backdrop);
+  window._modalCallback = onConfirm;
+}
+
+function handleModalConfirm() {
+  const btn = document.getElementById('modalConfirmBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:16px;height:16px;border-width:2px"></span>'; }
+  if (window._modalCallback) window._modalCallback();
+}
+
+function closeModal() {
+  const b = document.getElementById('modalBackdrop');
+  if (b) b.remove();
+  window._modalCallback = null;
+}
+
+// ═══════════════════════════
+// UTILITIES
+// ═══════════════════════════
+function pill(status) {
+  const map = {
+    'Active'  : 'green',  'Inactive': 'gray',
+    'Present' : 'green',  'Absent'  : 'red',    'Late': 'amber',
+    'Approved': 'green',  'Rejected': 'red',     'Pending': 'amber',
+    'admin'   : 'purple', 'employee': 'blue'
+  };
+  const cls = map[status] || 'gray';
+  return `<span class="pill ${cls}">${status}</span>`;
+}
+
+function showToast(type, message) {
+  let container = document.querySelector('.toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const icons = { success: 'fa-circle-check', error: 'fa-circle-xmark', info: 'fa-circle-info' };
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `<i class="fa-solid ${icons[type] || icons.info}"></i><span>${message}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => toast.remove(), 4000);
+}
+
+// Enter key on login
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !document.getElementById('loginScreen').classList.contains('hidden')) {
+    handleLogin();
+  }
+});
+</script>
